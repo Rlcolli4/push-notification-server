@@ -101,6 +101,12 @@
     .message.received {
       border-left-color: #007bff;
     }
+
+    .message.system {
+      border-left-color: #dc3545;
+      color: #dc3545;
+      font-style: italic;
+    }
   </style>
 </head>
 
@@ -260,7 +266,7 @@
       });
 
       socket.on('receiver_unavailable', (data) => {
-        showStatus('messageStatus', data.message, 'error');
+        addMessage('unavailable', 'system', data.message);
       });
 
       socket.on('new_message', (data) => {
@@ -377,8 +383,18 @@
       const messagesDiv = document.getElementById('messages');
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${type}`;
+
+      let senderText;
+      if (type === 'sent') {
+        senderText = 'You';
+      } else if (type === 'system') {
+        senderText = 'System';
+      } else {
+        senderText = sender || 'Unknown';
+      }
+
       messageDiv.innerHTML = `
-                <strong>${type === 'sent' ? 'You' : (sender || 'Unknown')}:</strong><br>
+                <strong>${senderText}:</strong><br>
                 ${text}<br>
                 <small>${new Date().toLocaleTimeString()}</small>
             `;
