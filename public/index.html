@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat System Test Client</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .messages {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      background-color: #f9f9f9;
+    }
+
+    .message {
+      margin-bottom: 10px;
+      padding: 8px;
+      background-color: white;
+      border-radius: 4px;
+      border-left: 3px solid #007bff;
+    }
+
+    .message.sent {
+      border-left-color: #28a745;
+      text-align: right;
+    }
+
+    .message.received {
+      border-left-color: #007bff;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Chat System Test Client</h1>
+
+  <div class="container">
+    <h3>Connection Status</h3>
+    <div id="connectionStatus" class="status info">Disconnected</div>
+    <button onclick="checkStatus()">Check Server Status</button>
+    <button onclick="debugConnection()">Debug Connection</button>
+  </div>
+
+  <div class="container">
+    <h3>User Registration</h3>
+    <div class="form-group">
+      <label for="machineId">Machine ID:</label>
+      <input type="text" id="machineId" placeholder="Enter unique machine identifier">
+    </div>
+    <div class="form-group">
+      <label for="userId">User ID:</label>
+      <input type="text" id="userId" placeholder="Enter user identifier">
+    </div>
+    <button onclick="registerUser()">Register User</button>
+    <div id="registrationStatus"></div>
+  </div>
+
+  <div class="container">
+    <h3>Create Chat Session</h3>
+    <div class="form-group">
+      <label for="receiverUserId">Receiver User ID:</label>
+      <input type="text" id="receiverUserId" placeholder="Enter receiver user ID">
+    </div>
+    <button onclick="createChatSession()">Create Session</button>
+    <div id="sessionStatus"></div>
+  </div>
+
+  <div class="container">
+    <h3>Send Message</h3>
+    <div class="form-group">
+      <label for="sessionId">Session ID:</label>
+      <input type="text" id="sessionId" placeholder="Enter session ID">
+    </div>
+    <div class="form-group">
+      <label for="messageText">Message:</label>
+      <textarea id="messageText" rows="3" placeholder="Enter your message"></textarea>
+    </div>
+    <button onclick="sendMessage()">Send Message</button>
+    <div id="messageStatus"></div>
+  </div>
+
+  <div class="container">
+    <h3>Messages</h3>
+    <div id="messages" class="messages"></div>
+  </div>
+
+  <script>
+    // Configuration
+    const SERVER_URL = 'http://localhost:3000';
+    let socket = null;
+    let currentSessionId = null;
+
+    // Initialize Socket.IO connection
+    function initializeSocket() {
+      try {
+        if (typeof io === 'undefined') {
+          console.error('❌ Socket.IO library not loaded. Make sure you are accessing this page through the server at http://localhost:3000');
+          showStatus('connectionStatus', 'Socket.IO library not loaded. Access via http://localhost:3000', 'error');
+          return false;
+        }
+
+        console.log('🔌 Initializing Socket.IO connection...');
+        socket = io(SERVER_URL);
+
+        // Set up event listeners
+        setupSocketEvents();
+        return true;
+      } catch (error) {
+        console.error('❌ Failed to initialize Socket.IO:', error);
+        showStatus('connectionStatus', `Socket.IO initialization failed: ${error.message}`, 'error');
+        return false;
+      }
+    }
+
+    // Setup Socket.IO event listeners
+    function setupSocketEvents() {
+      if (!socket) return;
+
+      // Connection events
+      socket.on('connect', () => {
+        console.log('✅ Socket.IO connected successfully!');
+        console.log('🔌 Socket ID:', socket.id);
+        console.log('🔌 Connected:', socket.connected);
+        document.getElementById('connectionStatus').textContent = 'Connected to server';
+        document.getElementById('connectionStatus').className = 'status success';
+
+        // Enable buttons when connected
+        enableButtons(true);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('❌ Socket.IO disconnected!');
+        console.log('🔌 Socket ID:', socket.id);
+        console.log('🔌 Connected:', socket.connected);
+        document.getElementById('connectionStatus').textContent = 'Disconnected from server';
+        document.getElementById('connectionStatus').className = 'status error';
+
+        // Disable buttons when disconnected
+        enableButtons(false);
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket.IO connection error:', error);
+        showStatus('connectionStatus', `Connection error: ${error.message}`, 'error');
+      });
+
+      // Test response handler
+      socket.on('test_response', (data) => {
+        console.log('🧪 Test response received:', data);
+      });
+
+      // Registration events
+      socket.on('registration_success', (data) => {
+        console.log('✅ Registration successful:', data);
+        showStatus('registrationStatus', data.message, 'success');
+      });
+
+      socket.on('registration_error', (data) => {
+        console.error('❌ Registration failed:', data);
+        showStatus('registrationStatus', data.message, 'error');
+      });
+
+      // Session events
+      socket.on('session_created', (data) => {
+        currentSessionId = data.sessionId;
+        document.getElementById('sessionId').value = data.sessionId;
+        showStatus('sessionStatus', `Session created: ${data.sessionId}`, 'success');
+      });
+
+      socket.on('session_error', (data) => {
+        showStatus('sessionStatus', data.message, 'error');
+      });
+
+      socket.on('new_chat_session', (data) => {
+        showStatus('sessionStatus', `New chat session from ${data.senderUserId}`, 'info');
+      });
+
+      // Message events
+      socket.on('message_sent', (data) => {
+        showStatus('messageStatus', `Message sent successfully`, 'success');
+        addMessage(data.messageId, 'sent', document.getElementById('messageText').value);
+        document.getElementById('messageText').value = '';
+      });
+
+      socket.on('message_error', (data) => {
+        showStatus('messageStatus', data.message, 'error');
+      });
+
+      socket.on('receiver_unavailable', (data) => {
+        showStatus('messageStatus', data.message, 'error');
+      });
+
+      socket.on('new_message', (data) => {
+        addMessage(data.message.id, 'received', data.message.message, data.senderUserId);
+      });
+    }
+
+    // Socket events are now set up in setupSocketEvents() function
+
+    // Functions
+    function registerUser() {
+      const machineId = document.getElementById('machineId').value;
+      const userId = document.getElementById('userId').value;
+
+      console.log('🔐 Attempting to register user...');
+      console.log('📝 Form data:', { machineId, userId });
+
+      if (!machineId || !userId) {
+        console.log('❌ Validation failed: missing fields');
+        showStatus('registrationStatus', 'Please fill in all fields', 'error');
+        return;
+      }
+
+      if (!socket) {
+        console.log('❌ Socket not initialized');
+        showStatus('registrationStatus', 'Socket not initialized. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      if (!socket.connected) {
+        console.log('❌ Socket not connected');
+        showStatus('registrationStatus', 'Socket not connected. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      console.log('🔌 Socket connected:', socket.connected);
+      console.log('🔌 Socket ID:', socket.id);
+      console.log('📤 Emitting register_user event...');
+      socket.emit('register_user', { machineId, userId });
+      console.log('✅ Event emitted successfully');
+    }
+
+    function createChatSession() {
+      const machineId = document.getElementById('machineId').value;
+      const senderUserId = document.getElementById('userId').value;
+      const receiverUserId = document.getElementById('receiverUserId').value;
+
+      console.log('💬 Attempting to create chat session...');
+      console.log('📝 Form data:', { machineId, senderUserId, receiverUserId });
+
+      if (!machineId || !senderUserId || !receiverUserId) {
+        console.log('❌ Validation failed: missing fields');
+        showStatus('sessionStatus', 'Please fill in all fields', 'error');
+        return;
+      }
+
+      if (!socket) {
+        console.log('❌ Socket not initialized');
+        showStatus('sessionStatus', 'Socket not initialized. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      if (!socket.connected) {
+        console.log('❌ Socket not connected');
+        showStatus('sessionStatus', 'Socket not connected. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      console.log('📤 Emitting create_chat_session event...');
+      socket.emit('create_chat_session', { machineId, senderUserId, receiverUserId });
+      console.log('✅ Event emitted successfully');
+    }
+
+    function sendMessage() {
+      const sessionId = document.getElementById('sessionId').value;
+      const machineId = document.getElementById('machineId').value;
+      const senderUserId = document.getElementById('userId').value;
+      const receiverUserId = document.getElementById('receiverUserId').value;
+      const message = document.getElementById('messageText').value;
+
+      console.log('📤 Attempting to send message...');
+      console.log('📝 Form data:', { sessionId, machineId, senderUserId, receiverUserId, message });
+
+      if (!sessionId || !machineId || !senderUserId || !receiverUserId || !message) {
+        console.log('❌ Validation failed: missing fields');
+        showStatus('messageStatus', 'Please fill in all fields', 'error');
+        return;
+      }
+
+      if (!socket) {
+        console.log('❌ Socket not initialized');
+        showStatus('messageStatus', 'Socket not initialized. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      if (!socket.connected) {
+        console.log('❌ Socket not connected');
+        showStatus('messageStatus', 'Socket not connected. Use "Check Server Status" or "Debug Connection" to establish connection first.', 'error');
+        return;
+      }
+
+      console.log('📤 Emitting send_message event...');
+      socket.emit('send_message', { sessionId, machineId, senderUserId, receiverUserId, message });
+      console.log('✅ Event emitted successfully');
+    }
+
+    function showStatus(elementId, message, type) {
+      const element = document.getElementById(elementId);
+      element.textContent = message;
+      element.className = `status ${type}`;
+    }
+
+    function addMessage(messageId, type, text, sender = null) {
+      const messagesDiv = document.getElementById('messages');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${type}`;
+      messageDiv.innerHTML = `
+                <strong>${type === 'sent' ? 'You' : (sender || 'Unknown')}:</strong><br>
+                ${text}<br>
+                <small>${new Date().toLocaleTimeString()}</small>
+            `;
+      messagesDiv.appendChild(messageDiv);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    async function checkStatus() {
+      try {
+        console.log('🔍 Checking server status...');
+        const response = await fetch(`${SERVER_URL}/api/status`);
+        const data = await response.json();
+        showStatus('connectionStatus', `Server: ${data.status} | Active Connections: ${data.activeConnections} | Active Users: ${data.activeUsers}`, 'info');
+
+        // Initialize socket if not already done
+        if (!socket) {
+          console.log('🔌 Socket not initialized, initializing now...');
+          if (!initializeSocket()) {
+            showStatus('connectionStatus', `Server: ${data.status} | Socket Initialization Failed`, 'error');
+            return;
+          }
+        }
+
+        // If server is running but socket not connected, try to connect
+        if (!socket.connected) {
+          console.log('🔌 Server is running but socket not connected, attempting connection...');
+          socket.connect();
+
+          // Wait for connection and update status
+          socket.once('connect', () => {
+            console.log('✅ Socket connected after server status check');
+            showStatus('connectionStatus', `Server: ${data.status} | Socket Connected | Active Connections: ${data.activeConnections} | Active Users: ${data.activeUsers}`, 'success');
+          });
+
+          socket.once('connect_error', (error) => {
+            console.error('❌ Socket connection failed after server status check:', error);
+            showStatus('connectionStatus', `Server: ${data.status} | Socket Connection Failed: ${error.message}`, 'error');
+          });
+        }
+      } catch (error) {
+        console.error('❌ Failed to check server status:', error);
+        showStatus('connectionStatus', 'Failed to check server status', 'error');
+      }
+    }
+
+    // Enable/disable buttons based on connection status
+    function enableButtons(enable) {
+      const buttons = document.querySelectorAll('button:not([onclick*="checkStatus"]):not([onclick*="debugConnection"])');
+      buttons.forEach(button => {
+        button.disabled = !enable;
+        button.style.opacity = enable ? '1' : '0.5';
+        button.style.cursor = enable ? 'pointer' : 'not-allowed';
+      });
+
+      console.log(`🔘 Buttons ${enable ? 'enabled' : 'disabled'}`);
+    }
+
+    // Debug connection function
+    function debugConnection() {
+      console.log('🔍 Debugging connection...');
+      console.log('🌐 Server URL:', SERVER_URL);
+
+      // Initialize socket if not already done
+      if (!socket) {
+        console.log('🔌 Socket not initialized, initializing now...');
+        if (!initializeSocket()) {
+          showStatus('connectionStatus', 'Socket Initialization Failed', 'error');
+          return;
+        }
+      }
+
+      console.log('🔌 Socket connected:', socket.connected);
+      console.log('🔌 Socket ID:', socket.id);
+      console.log('🔌 Socket state:', socket.readyState);
+
+      // If not connected, try to connect first
+      if (!socket.connected) {
+        console.log('🔌 Socket not connected, attempting connection...');
+        socket.connect();
+
+        // Wait for connection and then test
+        socket.once('connect', () => {
+          console.log('✅ Socket connected during debug, testing emit...');
+          socket.emit('test', { message: 'Test message' });
+          console.log('✅ Test emit completed');
+        });
+
+        socket.once('connect_error', (error) => {
+          console.error('❌ Socket connection failed during debug:', error);
+          showStatus('connectionStatus', `Socket Connection Failed: ${error.message}`, 'error');
+        });
+      } else {
+        // Already connected, test emit
+        console.log('🧪 Testing emit...');
+        socket.emit('test', { message: 'Test message' });
+        console.log('✅ Test emit completed');
+      }
+    }
+
+    // Auto-generate machine ID if not provided
+    if (!localStorage.getItem('machineId')) {
+      localStorage.setItem('machineId', 'machine_' + Math.random().toString(36).substr(2, 9));
+    }
+    document.getElementById('machineId').value = localStorage.getItem('machineId');
+
+    // Initial logging
+    console.log('🚀 Chat client initialized');
+    console.log('🌐 Server URL:', SERVER_URL);
+    console.log('🔌 Socket object:', socket);
+    console.log('🔌 Initial connection state:', socket ? socket.connected : 'Not initialized');
+
+    // Initially disable buttons until connection is established
+    enableButtons(false);
+
+    console.log('💡 Use "Check Server Status" or "Debug Connection" to establish Socket.IO connection');
+    console.log('⚠️  Note: Socket.IO library must be loaded from the server. Access this page via http://localhost:3000');
+  </script>
+</body>
+
+</html>
