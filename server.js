@@ -22,7 +22,7 @@ const { v4: uuidv4 } = require('uuid');
 const PORT = process.env.PORT || 3000;
 const CHAT_SESSIONS_DIR = process.env.CHAT_SESSIONS_DIR || path.join(__dirname, 'chat_sessions');
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
-const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH || 1000;
+const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH || 2000;
 const SESSION_CLEANUP_INTERVAL = process.env.SESSION_CLEANUP_INTERVAL || 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 const app = express();
