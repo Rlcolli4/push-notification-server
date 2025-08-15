@@ -6,11 +6,30 @@ const path = require('path');
 const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 
+/**
+ * Configuration
+ * 
+ * Environment Variables:
+ * - PORT: Server port (default: 3000)
+ * - CHAT_SESSIONS_DIR: Directory to store chat sessions (default: ./chat_sessions)
+ * - CORS_ORIGIN: CORS origin setting (default: "*")
+ * - MAX_MESSAGE_LENGTH: Maximum allowed message length (default: 1000)
+ * - SESSION_CLEANUP_INTERVAL: Session cleanup interval in milliseconds (default: 24 hours)
+ * 
+ * Example usage:
+ * PORT=8080 CHAT_SESSIONS_DIR=/var/chat_sessions CORS_ORIGIN=http://localhost:3000 node server.js
+ */
+const PORT = process.env.PORT || 3000;
+const CHAT_SESSIONS_DIR = process.env.CHAT_SESSIONS_DIR || path.join(__dirname, 'chat_sessions');
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH || 1000;
+const SESSION_CLEANUP_INTERVAL = process.env.SESSION_CLEANUP_INTERVAL || 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: CORS_ORIGIN,
     methods: ["GET", "POST"]
   }
 });
@@ -23,9 +42,6 @@ app.use(express.static('public'));
 // Store active connections
 const activeConnections = new Map(); // machineId -> socket
 const userSessions = new Map(); // userId -> machineId
-
-// Chat sessions storage path
-const CHAT_SESSIONS_DIR = path.join(__dirname, 'chat_sessions');
 
 // Ensure chat sessions directory exists
 fs.ensureDirSync(CHAT_SESSIONS_DIR);
@@ -248,9 +264,10 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Chat sessions directory: ${CHAT_SESSIONS_DIR}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📁 Chat sessions directory: ${CHAT_SESSIONS_DIR}`);
+  console.log(`🌐 CORS origin: ${CORS_ORIGIN}`);
+  console.log(`📝 Max message length: ${MAX_MESSAGE_LENGTH}`);
+  console.log(`⏰ Session cleanup interval: ${SESSION_CLEANUP_INTERVAL / (1000 * 60 * 60)} hours`);
 });
