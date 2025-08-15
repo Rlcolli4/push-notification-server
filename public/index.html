@@ -152,6 +152,11 @@
   </div>
 
   <div class="container">
+    <h3>Messages</h3>
+    <div id="messages" class="messages"></div>
+  </div>
+
+  <div class="container">
     <h3>Send Message</h3>
     <div class="form-group">
       <label for="sessionId">Session ID:</label>
@@ -166,11 +171,6 @@
       <button id="sendMessageBtn" onclick="sendMessage()" disabled>Send Message</button>
     </div>
     <div id="messageStatus"></div>
-  </div>
-
-  <div class="container">
-    <h3>Messages</h3>
-    <div id="messages" class="messages"></div>
   </div>
 
   <script>
@@ -256,18 +256,21 @@
         showStatus('sessionStatus', `Session created: ${data.sessionId}`, 'success');
 
         // Enable the Send Message form since we have a valid session
-        setSendMessageFormEnabled(true);
+        setSendMessageFormEnabled(true, data.sessionId, false);
       });
 
       socket.on('session_error', (data) => {
         showStatus('sessionStatus', data.message, 'error');
 
         // Disable the Send Message form since session creation failed
-        setSendMessageFormEnabled(false);
+        setSendMessageFormEnabled(false, null, false);
       });
 
       socket.on('new_chat_session', (data) => {
         showStatus('sessionStatus', `New chat session from ${data.senderUserId}`, 'info');
+
+        // Set up the receiver's interface for the new chat session
+        setupReceiverInterface(data.sessionId, data.senderUserId);
       });
 
       // Message events
@@ -444,7 +447,17 @@
                 <small>${new Date().toLocaleTimeString()}</small>
             `;
       messagesDiv.appendChild(messageDiv);
+
+      // Always scroll to the bottom to show the newest message
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      // Also scroll the main page to the bottom to ensure the new message is visible
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'smooth'
+      });
+
+      console.log(`💬 Message added: ${type} from ${senderText} - "${text}"`);
     }
 
     function handleKeyDown(event) {
@@ -499,6 +512,15 @@
       document.getElementById('logOffBtn').disabled = true;
       document.getElementById('sendMessageBtn').disabled = true;
 
+      // Reset Create Chat Session form
+      const receiverUserIdInput = document.getElementById('receiverUserId');
+      const createSessionBtn = document.querySelector('button[onclick="createChatSession()"]');
+
+      receiverUserIdInput.disabled = false;
+      createSessionBtn.disabled = false;
+      createSessionBtn.textContent = 'Create Session';
+      createSessionBtn.style.backgroundColor = ''; // Reset to default button color
+
       // Reset current session
       currentSessionId = null;
 
@@ -506,25 +528,60 @@
     }
 
     // Function to enable/disable the Send Message form
-    function setSendMessageFormEnabled(enabled) {
+    function setSendMessageFormEnabled(enabled, sessionId = null, isReadOnly = false) {
       const sessionIdInput = document.getElementById('sessionId');
       const messageTextArea = document.getElementById('messageText');
       const sendMessageBtn = document.getElementById('sendMessageBtn');
 
-      sessionIdInput.disabled = !enabled;
+      // Handle session ID input
+      if (sessionId) {
+        sessionIdInput.value = sessionId;
+        sessionIdInput.disabled = isReadOnly; // Make read-only if specified
+      }
+
       messageTextArea.disabled = !enabled;
       sendMessageBtn.disabled = !enabled;
 
       // Update placeholder text to indicate form state
       if (enabled) {
-        sessionIdInput.placeholder = 'Enter session ID';
+        if (isReadOnly) {
+          sessionIdInput.placeholder = 'Session ID (read-only)';
+        } else {
+          sessionIdInput.placeholder = 'Enter session ID';
+        }
         messageTextArea.placeholder = 'Enter your message';
       } else {
         sessionIdInput.placeholder = 'Create a chat session first';
         messageTextArea.placeholder = 'User must be online to send messages';
       }
 
-      console.log(`📝 Send Message form ${enabled ? 'enabled' : 'disabled'}`);
+      console.log(`📝 Send Message form ${enabled ? 'enabled' : 'disabled'}${sessionId ? ` with session ${sessionId}` : ''}${isReadOnly ? ' (read-only session ID)' : ''}`);
+    }
+
+    // Function to set up the receiver's interface when they get a new chat session
+    function setupReceiverInterface(sessionId, senderUserId) {
+      console.log(`🎯 Setting up receiver interface for session ${sessionId} from ${senderUserId}`);
+
+      // Disable the Create Chat Session form since they're now linked
+      const receiverUserIdInput = document.getElementById('receiverUserId');
+      const createSessionBtn = document.querySelector('button[onclick="createChatSession()"]');
+
+      receiverUserIdInput.disabled = true;
+      receiverUserIdInput.value = senderUserId; // Show who they're connected to
+      createSessionBtn.disabled = true;
+      createSessionBtn.textContent = 'Session Active';
+      createSessionBtn.style.backgroundColor = '#6c757d'; // Gray out the button
+
+      // Enable the Send Message form with the session ID as read-only
+      setSendMessageFormEnabled(true, sessionId, true);
+
+      // Update the current session ID
+      currentSessionId = sessionId;
+
+      // Update status to show they're ready to chat
+      showStatus('sessionStatus', `Connected to ${senderUserId}! You can now send messages.`, 'success');
+
+      console.log(`✅ Receiver interface setup complete for session ${sessionId}`);
     }
 
     async function checkStatus() {
