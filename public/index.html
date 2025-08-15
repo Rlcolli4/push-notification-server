@@ -107,6 +107,13 @@
       color: #dc3545;
       font-style: italic;
     }
+
+    .message.system-offline {
+      border-left-color: #6c757d;
+      color: #6c757d;
+      font-style: italic;
+      background-color: #f8f9fa;
+    }
   </style>
 </head>
 
@@ -121,7 +128,7 @@
   </div>
 
   <div class="container">
-    <h3>User Registration</h3>
+    <h3>Get Online</h3>
     <div class="form-group">
       <label for="machineId">Machine ID:</label>
       <input type="text" id="machineId" placeholder="Enter unique machine identifier">
@@ -130,7 +137,7 @@
       <label for="userId">User ID:</label>
       <input type="text" id="userId" placeholder="Enter user identifier">
     </div>
-    <button onclick="registerUser()">Register User</button>
+    <button onclick="registerUser()">Get Online</button>
     <div id="registrationStatus"></div>
   </div>
 
@@ -145,6 +152,11 @@
   </div>
 
   <div class="container">
+    <h3>Messages</h3>
+    <div id="messages" class="messages"></div>
+  </div>
+
+  <div class="container">
     <h3>Send Message</h3>
     <div class="form-group">
       <label for="sessionId">Session ID:</label>
@@ -152,15 +164,13 @@
     </div>
     <div class="form-group">
       <label for="messageText">Message:</label>
-      <textarea id="messageText" rows="3" placeholder="Enter your message"></textarea>
+      <textarea id="messageText" rows="3" placeholder="Enter your message" onkeydown="handleKeyDown(event)"></textarea>
     </div>
-    <button onclick="sendMessage()">Send Message</button>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <button id="logOffBtn" onclick="logOff()" style="background-color: #dc3545;" disabled>Log Off</button>
+      <button id="sendMessageBtn" onclick="sendMessage()" disabled>Send Message</button>
+    </div>
     <div id="messageStatus"></div>
-  </div>
-
-  <div class="container">
-    <h3>Messages</h3>
-    <div id="messages" class="messages"></div>
   </div>
 
   <script>
@@ -244,14 +254,23 @@
         currentSessionId = data.sessionId;
         document.getElementById('sessionId').value = data.sessionId;
         showStatus('sessionStatus', `Session created: ${data.sessionId}`, 'success');
+
+        // Enable the Send Message form since we have a valid session
+        setSendMessageFormEnabled(true, data.sessionId, false);
       });
 
       socket.on('session_error', (data) => {
         showStatus('sessionStatus', data.message, 'error');
+
+        // Disable the Send Message form since session creation failed
+        setSendMessageFormEnabled(false, null, false);
       });
 
       socket.on('new_chat_session', (data) => {
         showStatus('sessionStatus', `New chat session from ${data.senderUserId}`, 'info');
+
+        // Set up the receiver's interface for the new chat session
+        setupReceiverInterface(data.sessionId, data.senderUserId);
       });
 
       // Message events
@@ -259,6 +278,9 @@
         showStatus('messageStatus', `Message sent successfully`, 'success');
         addMessage(data.messageId, 'sent', document.getElementById('messageText').value);
         document.getElementById('messageText').value = '';
+
+        // Enable Log Off button after successfully sending a message
+        document.getElementById('logOffBtn').disabled = false;
       });
 
       socket.on('message_error', (data) => {
@@ -270,7 +292,31 @@
       });
 
       socket.on('new_message', (data) => {
-        addMessage(data.message.id, 'received', data.message.message, data.senderUserId);
+        // Check if this is a system message (like offline notification)
+        if (data.senderUserId === 'System') {
+          addMessage(data.message.id, 'system-offline', data.message.message, 'System');
+        } else {
+          addMessage(data.message.id, 'received', data.message.message, data.senderUserId);
+        }
+      });
+
+      // Log off events
+      socket.on('log_off_success', (data) => {
+        console.log('✅ Log off successful:', data);
+        showStatus('messageStatus', 'Successfully logged off. Socket will close shortly.', 'success');
+
+        // Reset forms and close socket after a short delay
+        setTimeout(() => {
+          resetForms();
+          if (socket) {
+            socket.disconnect();
+          }
+        }, 1000);
+      });
+
+      socket.on('log_off_error', (data) => {
+        console.error('❌ Log off failed:', data);
+        showStatus('messageStatus', data.message || 'Failed to log off', 'error');
       });
     }
 
@@ -281,7 +327,7 @@
       const machineId = document.getElementById('machineId').value;
       const userId = document.getElementById('userId').value;
 
-      console.log('🔐 Attempting to register user...');
+      console.log('🌐 Attempting to get user online...');
       console.log('📝 Form data:', { machineId, userId });
 
       if (!machineId || !userId) {
@@ -389,6 +435,8 @@
         senderText = 'You';
       } else if (type === 'system') {
         senderText = 'System';
+      } else if (type === 'system-offline') {
+        senderText = 'System';
       } else {
         senderText = sender || 'Unknown';
       }
@@ -399,7 +447,141 @@
                 <small>${new Date().toLocaleTimeString()}</small>
             `;
       messagesDiv.appendChild(messageDiv);
+
+      // Always scroll to the bottom to show the newest message
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      // Also scroll the main page to the bottom to ensure the new message is visible
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'smooth'
+      });
+
+      console.log(`💬 Message added: ${type} from ${senderText} - "${text}"`);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Enter' && event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function logOff() {
+      if (!socket || !socket.connected) {
+        showStatus('messageStatus', 'Not connected to server', 'error');
+        return;
+      }
+
+      const machineId = document.getElementById('machineId').value;
+      const userId = document.getElementById('userId').value;
+
+      if (!machineId || !userId) {
+        showStatus('messageStatus', 'Machine ID and User ID are required', 'error');
+        return;
+      }
+
+      console.log('🚪 User logging off:', { machineId, userId });
+      socket.emit('log_off', { machineId, userId });
+    }
+
+    function resetForms() {
+      // Reset all form fields
+      document.getElementById('machineId').value = localStorage.getItem('machineId') || '';
+      document.getElementById('userId').value = '';
+      document.getElementById('receiverUserId').value = '';
+      document.getElementById('sessionId').value = '';
+      document.getElementById('messageText').value = '';
+
+      // Clear all status messages and remove CSS classes
+      const registrationStatus = document.getElementById('registrationStatus');
+      const sessionStatus = document.getElementById('sessionStatus');
+      const messageStatus = document.getElementById('messageStatus');
+
+      registrationStatus.textContent = '';
+      registrationStatus.className = '';
+      sessionStatus.textContent = '';
+      sessionStatus.className = '';
+      messageStatus.textContent = '';
+      messageStatus.className = '';
+
+      // Clear messages
+      document.getElementById('messages').innerHTML = '';
+
+      // Disable Log Off button and Send Message button
+      document.getElementById('logOffBtn').disabled = true;
+      document.getElementById('sendMessageBtn').disabled = true;
+
+      // Reset Create Chat Session form
+      const receiverUserIdInput = document.getElementById('receiverUserId');
+      const createSessionBtn = document.querySelector('button[onclick="createChatSession()"]');
+
+      receiverUserIdInput.disabled = false;
+      createSessionBtn.disabled = false;
+      createSessionBtn.textContent = 'Create Session';
+      createSessionBtn.style.backgroundColor = ''; // Reset to default button color
+
+      // Reset current session
+      currentSessionId = null;
+
+      console.log('🔄 Forms reset to initial state');
+    }
+
+    // Function to enable/disable the Send Message form
+    function setSendMessageFormEnabled(enabled, sessionId = null, isReadOnly = false) {
+      const sessionIdInput = document.getElementById('sessionId');
+      const messageTextArea = document.getElementById('messageText');
+      const sendMessageBtn = document.getElementById('sendMessageBtn');
+
+      // Handle session ID input
+      if (sessionId) {
+        sessionIdInput.value = sessionId;
+        sessionIdInput.disabled = isReadOnly; // Make read-only if specified
+      }
+
+      messageTextArea.disabled = !enabled;
+      sendMessageBtn.disabled = !enabled;
+
+      // Update placeholder text to indicate form state
+      if (enabled) {
+        if (isReadOnly) {
+          sessionIdInput.placeholder = 'Session ID (read-only)';
+        } else {
+          sessionIdInput.placeholder = 'Enter session ID';
+        }
+        messageTextArea.placeholder = 'Enter your message';
+      } else {
+        sessionIdInput.placeholder = 'Create a chat session first';
+        messageTextArea.placeholder = 'User must be online to send messages';
+      }
+
+      console.log(`📝 Send Message form ${enabled ? 'enabled' : 'disabled'}${sessionId ? ` with session ${sessionId}` : ''}${isReadOnly ? ' (read-only session ID)' : ''}`);
+    }
+
+    // Function to set up the receiver's interface when they get a new chat session
+    function setupReceiverInterface(sessionId, senderUserId) {
+      console.log(`🎯 Setting up receiver interface for session ${sessionId} from ${senderUserId}`);
+
+      // Disable the Create Chat Session form since they're now linked
+      const receiverUserIdInput = document.getElementById('receiverUserId');
+      const createSessionBtn = document.querySelector('button[onclick="createChatSession()"]');
+
+      receiverUserIdInput.disabled = true;
+      receiverUserIdInput.value = senderUserId; // Show who they're connected to
+      createSessionBtn.disabled = true;
+      createSessionBtn.textContent = 'Session Active';
+      createSessionBtn.style.backgroundColor = '#6c757d'; // Gray out the button
+
+      // Enable the Send Message form with the session ID as read-only
+      setSendMessageFormEnabled(true, sessionId, true);
+
+      // Update the current session ID
+      currentSessionId = sessionId;
+
+      // Update status to show they're ready to chat
+      showStatus('sessionStatus', `Connected to ${senderUserId}! You can now send messages.`, 'success');
+
+      console.log(`✅ Receiver interface setup complete for session ${sessionId}`);
     }
 
     async function checkStatus() {
@@ -448,6 +630,11 @@
         button.style.opacity = enable ? '1' : '0.5';
         button.style.cursor = enable ? 'pointer' : 'not-allowed';
       });
+
+      // If disabling all buttons, also disable the Send Message form
+      if (!enable) {
+        setSendMessageFormEnabled(false);
+      }
 
       console.log(`🔘 Buttons ${enable ? 'enabled' : 'disabled'}`);
     }
@@ -508,6 +695,9 @@
 
     // Initially disable buttons until connection is established
     enableButtons(false);
+
+    // Initially disable the Send Message form
+    setSendMessageFormEnabled(false);
 
     console.log('💡 Use "Check Server Status" or "Debug Connection" to establish Socket.IO connection');
     console.log('⚠️  Note: Socket.IO library must be loaded from the server. Access this page via http://localhost:3000');
