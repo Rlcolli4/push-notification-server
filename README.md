@@ -57,6 +57,8 @@ The server will start on port 3000 by default. You can change this by setting th
 
 ## Client Setup and Testing
 
+Make sure to create a `chat_sessions` folder locally in your project, also make sure to run `npm install` before executing other steps.
+
 ### ⚠️ **Important: Proper Client Access**
 
 The test client (`public/index.html`) **must be accessed through the Node.js server**, not opened directly from the file system. This is because:
@@ -363,3 +365,4 @@ Enable detailed logging by adding console.log statements or using a logging libr
 ## License
 
 MIT License - see LICENSE file for details.
+
